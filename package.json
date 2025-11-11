@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "ethers": "^6.15.0",
-    "fluidsdk": "file:fluidsdk-1.0.0.tgz",
+    "fluidsdk": "file:fluidsdk-1.0.1.tgz",
     "graphql-request": "^7.3.3",
     "ipfs-http-client": "^60.0.1"
   }

@@ -123,6 +123,36 @@ export class Agent {
     return this;
   }
 
+  /**
+   * Manually set MCP capabilities (tools, prompts, resources) for the MCP endpoint
+   * Useful when autoFetch fails or when you want to explicitly set capabilities
+   */
+  setMcpCapabilities(tools?: string[], prompts?: string[], resources?: string[]): this {
+    const mcpEndpoint = this.registrationFile.endpoints.find((ep) => ep.type === EndpointType.MCP);
+    
+    if (!mcpEndpoint) {
+      throw new Error('No MCP endpoint configured. Call setMCP() first.');
+    }
+    
+    if (!mcpEndpoint.meta) {
+      mcpEndpoint.meta = {};
+    }
+    
+    if (tools && tools.length > 0) {
+      mcpEndpoint.meta.mcpTools = tools;
+    }
+    if (prompts && prompts.length > 0) {
+      mcpEndpoint.meta.mcpPrompts = prompts;
+    }
+    if (resources && resources.length > 0) {
+      mcpEndpoint.meta.mcpResources = resources;
+    }
+    
+    this.registrationFile.updatedAt = Math.floor(Date.now() / 1000);
+    
+    return this;
+  }
+
   async setA2A(agentcard: string, version: string = '0.30', autoFetch: boolean = true): Promise<this> {
     // Remove existing A2A endpoint if any
     this.registrationFile.endpoints = this.registrationFile.endpoints.filter(

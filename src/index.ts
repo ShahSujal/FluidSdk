@@ -396,6 +396,68 @@ export class FluidSDK {
   }
 
   /**
+   * Search agents by MCP capabilities (tools, prompts, resources)
+   * @param options Search options
+   * @param options.toolNames Array of MCP tool names to search for
+   * @param options.promptNames Array of MCP prompt names to search for
+   * @param options.resourceNames Array of MCP resource names to search for
+   * @param options.matchAll If true, agent must have ALL specified items. If false, agent must have ANY (default: false)
+   * @param options.first Maximum number of results (default: 100)
+   * @param options.skip Number of results to skip (default: 0)
+   * @param options.orderBy Field to order by (default: 'createdAt')
+   * @param options.orderDirection Order direction 'asc' or 'desc' (default: 'desc')
+   * @returns Array of agents with the specified MCP capabilities
+   */
+  async searchAgentsByMcpCapabilities(options: {
+    toolNames?: string[];
+    promptNames?: string[];
+    resourceNames?: string[];
+    matchAll?: boolean;
+    first?: number;
+    skip?: number;
+    orderBy?: string;
+    orderDirection?: 'asc' | 'desc';
+  }): Promise<AgentSummary[]> {
+    if (!this._subgraphClient) {
+      throw new Error('Subgraph client not initialized - cannot query MCP capabilities');
+    }
+    return this._subgraphClient.getAgentsByMcpCapabilities(options);
+  }
+
+  /**
+   * Get all unique MCP tools across all agents in the subgraph
+   * @returns Sorted array of unique tool names
+   */
+  async getAllMcpTools(): Promise<string[]> {
+    if (!this._subgraphClient) {
+      throw new Error('Subgraph client not initialized - cannot query MCP tools');
+    }
+    return this._subgraphClient.getAllMcpTools();
+  }
+
+  /**
+   * Get all unique MCP prompts across all agents in the subgraph
+   * @returns Sorted array of unique prompt names
+   */
+  async getAllMcpPrompts(): Promise<string[]> {
+    if (!this._subgraphClient) {
+      throw new Error('Subgraph client not initialized - cannot query MCP prompts');
+    }
+    return this._subgraphClient.getAllMcpPrompts();
+  }
+
+  /**
+   * Get all unique MCP resources across all agents in the subgraph
+   * @returns Sorted array of unique resource names
+   */
+  async getAllMcpResources(): Promise<string[]> {
+    if (!this._subgraphClient) {
+      throw new Error('Subgraph client not initialized - cannot query MCP resources');
+    }
+    return this._subgraphClient.getAllMcpResources();
+  }
+
+  /**
    * Check if address is agent owner
    */
   async isAgentOwner(agentId: AgentId, address: Address): Promise<boolean> {
@@ -465,16 +527,56 @@ export class FluidSDK {
 
   /**
    * Give feedback
+   * @param agentId - The agent ID to give feedback for
+   * @param feedbackFile - The feedback data
+   * @param feedbackAuth - Optional pre-signed feedback authorization
+   * @param feedbackSigner - Optional separate signer for feedback (to avoid self-feedback)
    */
   async giveFeedback(
     agentId: AgentId,
     feedbackFile: Record<string, unknown>,
-    feedbackAuth?: string
+    feedbackAuth?: string,
   ): Promise<Feedback> {
+
+
+    console.log({
+      agentId,
+      feedbackFile,
+      feedbackAuth
+    });
+    
     // Update feedback manager with registries
     this._feedbackManager.setReputationRegistry(this.getReputationRegistry());
     this._feedbackManager.setIdentityRegistry(this.getIdentityRegistry());
 
+    // Validate against self-feedback BEFORE attempting transaction
+    const clientAddress = this._web3Client.address;
+    
+    if (!clientAddress) {
+      throw new Error('No signer available for feedback. Provide feedbackSigner or configure SDK with a signer.');
+    }
+
+    // Check if the feedback giver is the agent owner
+    try {
+      const agentData = await this.getAgent(agentId);
+      if (agentData && agentData.owners.includes(clientAddress.toLowerCase())) {
+        throw new Error(
+          `Self-feedback not allowed: Address ${clientAddress} is an owner of agent ${agentId}. ` +
+          `Please use a different wallet to give feedback.`
+        );
+      }
+    } catch (error) {
+      // If error is our validation error, re-throw it
+      if (error instanceof Error && error.message.includes('Self-feedback not allowed')) {
+        throw error;
+      }
+      // Otherwise, log warning but continue (agent might not be indexed yet)
+      console.warn('[SDK] Could not validate agent ownership:', error instanceof Error ? error.message : String(error));
+    }
+
+    
+
+    // Use default manager if no separate signer provided
     return this._feedbackManager.giveFeedback(agentId, feedbackFile, undefined, feedbackAuth);
   }
 

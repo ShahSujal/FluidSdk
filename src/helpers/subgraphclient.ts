@@ -765,5 +765,238 @@ export class SubgraphClient {
       throw new Error(`Subgraph reputation search failed: ${error}`);
     }
   }
+
+  /**
+   * Query agents by MCP tools, prompts, or resources
+   * @param toolNames Array of tool names to search for
+   * @param promptNames Array of prompt names to search for
+   * @param resourceNames Array of resource names to search for
+   * @param matchAll If true, agent must have ALL specified items. If false, agent must have ANY (default: false)
+   * @param first Maximum number of results (default: 100)
+   * @param skip Number of results to skip (default: 0)
+   */
+  async getAgentsByMcpCapabilities(options: {
+    toolNames?: string[];
+    promptNames?: string[];
+    resourceNames?: string[];
+    matchAll?: boolean;
+    first?: number;
+    skip?: number;
+    orderBy?: string;
+    orderDirection?: 'asc' | 'desc';
+  }): Promise<AgentSummary[]> {
+    const {
+      toolNames = [],
+      promptNames = [],
+      resourceNames = [],
+      matchAll = false,
+      first = 100,
+      skip = 0,
+      orderBy = 'createdAt',
+      orderDirection = 'desc',
+    } = options;
+
+    // Build filter conditions for registrationFile
+    const conditions: string[] = [];
+
+    if (toolNames.length > 0) {
+      if (matchAll) {
+        // Agent must have ALL specified tools
+        toolNames.forEach(tool => {
+          conditions.push(`mcpTools_contains: ["${tool}"]`);
+        });
+      } else {
+        // Agent must have ANY of the specified tools
+        conditions.push(`mcpTools_contains: [${toolNames.map(t => `"${t}"`).join(', ')}]`);
+      }
+    }
+
+    if (promptNames.length > 0) {
+      if (matchAll) {
+        // Agent must have ALL specified prompts
+        promptNames.forEach(prompt => {
+          conditions.push(`mcpPrompts_contains: ["${prompt}"]`);
+        });
+      } else {
+        // Agent must have ANY of the specified prompts
+        conditions.push(`mcpPrompts_contains: [${promptNames.map(p => `"${p}"`).join(', ')}]`);
+      }
+    }
+
+    if (resourceNames.length > 0) {
+      if (matchAll) {
+        // Agent must have ALL specified resources
+        resourceNames.forEach(resource => {
+          conditions.push(`mcpResources_contains: ["${resource}"]`);
+        });
+      } else {
+        // Agent must have ANY of the specified resources
+        conditions.push(`mcpResources_contains: [${resourceNames.map(r => `"${r}"`).join(', ')}]`);
+      }
+    }
+
+    // If no filters specified, return agents with any MCP capabilities
+    if (conditions.length === 0) {
+      conditions.push(`mcpEndpoint_not: null`);
+    }
+
+    const whereClause = `where: { registrationFile_: { ${conditions.join(', ')} } }`;
+
+    const query = `
+      query GetAgentsByMcpCapabilities($first: Int!, $skip: Int!, $orderBy: Agent_orderBy!, $orderDirection: OrderDirection!) {
+        agents(
+          ${whereClause}
+          first: $first
+          skip: $skip
+          orderBy: $orderBy
+          orderDirection: $orderDirection
+        ) {
+          id
+          chainId
+          agentId
+          owner
+          operators
+          agentURI
+          createdAt
+          updatedAt
+          registrationFile {
+            id
+            agentId
+            name
+            description
+            image
+            active
+            x402support
+            supportedTrusts
+            mcpEndpoint
+            mcpVersion
+            a2aEndpoint
+            a2aVersion
+            ens
+            did
+            agentWallet
+            agentWalletChainId
+            mcpTools
+            mcpPrompts
+            mcpResources
+            a2aSkills
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      first,
+      skip,
+      orderBy,
+      orderDirection: orderDirection.toLowerCase() as 'asc' | 'desc',
+    };
+
+    try {
+      const data = await this.query<{ agents: QueryAgent[] }>(query, variables);
+      return (data.agents || []).map((agent) => this._transformAgent(agent)) as AgentSummary[];
+    } catch (error) {
+      throw new Error(`Failed to query agents by MCP capabilities: ${error}`);
+    }
+  }
+
+  /**
+   * Get all unique MCP tools across all agents
+   */
+  async getAllMcpTools(): Promise<string[]> {
+    const query = `
+      query GetAllMcpTools {
+        agentRegistrationFiles(
+          where: { mcpTools_not: [] }
+          first: 1000
+        ) {
+          mcpTools
+        }
+      }
+    `;
+
+    try {
+      const data = await this.query<{ agentRegistrationFiles: Array<{ mcpTools: string[] }> }>(query);
+      const files = data.agentRegistrationFiles || [];
+      
+      // Collect all unique tools
+      const toolsSet = new Set<string>();
+      files.forEach(file => {
+        if (file.mcpTools) {
+          file.mcpTools.forEach(tool => toolsSet.add(tool));
+        }
+      });
+      
+      return Array.from(toolsSet).sort();
+    } catch (error) {
+      throw new Error(`Failed to get all MCP tools: ${error}`);
+    }
+  }
+
+  /**
+   * Get all unique MCP prompts across all agents
+   */
+  async getAllMcpPrompts(): Promise<string[]> {
+    const query = `
+      query GetAllMcpPrompts {
+        agentRegistrationFiles(
+          where: { mcpPrompts_not: [] }
+          first: 1000
+        ) {
+          mcpPrompts
+        }
+      }
+    `;
+
+    try {
+      const data = await this.query<{ agentRegistrationFiles: Array<{ mcpPrompts: string[] }> }>(query);
+      const files = data.agentRegistrationFiles || [];
+      
+      // Collect all unique prompts
+      const promptsSet = new Set<string>();
+      files.forEach(file => {
+        if (file.mcpPrompts) {
+          file.mcpPrompts.forEach(prompt => promptsSet.add(prompt));
+        }
+      });
+      
+      return Array.from(promptsSet).sort();
+    } catch (error) {
+      throw new Error(`Failed to get all MCP prompts: ${error}`);
+    }
+  }
+
+  /**
+   * Get all unique MCP resources across all agents
+   */
+  async getAllMcpResources(): Promise<string[]> {
+    const query = `
+      query GetAllMcpResources {
+        agentRegistrationFiles(
+          where: { mcpResources_not: [] }
+          first: 1000
+        ) {
+          mcpResources
+        }
+      }
+    `;
+
+    try {
+      const data = await this.query<{ agentRegistrationFiles: Array<{ mcpResources: string[] }> }>(query);
+      const files = data.agentRegistrationFiles || [];
+      
+      // Collect all unique resources
+      const resourcesSet = new Set<string>();
+      files.forEach(file => {
+        if (file.mcpResources) {
+          file.mcpResources.forEach(resource => resourcesSet.add(resource));
+        }
+      });
+      
+      return Array.from(resourcesSet).sort();
+    } catch (error) {
+      throw new Error(`Failed to get all MCP resources: ${error}`);
+    }
+  }
 }
 

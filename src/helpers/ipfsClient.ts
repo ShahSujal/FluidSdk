@@ -77,17 +77,17 @@ export class IPFSClient {
 
     try {
       // Add timeout to fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.PINATA_UPLOAD);
+      // const controller = new AbortController();
+      // const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.PINATA_UPLOAD);
       
       const response = await fetch(url, {
         method: 'POST',
         headers,
         body: formData,
-        signal: controller.signal,
+        // signal: controller.signal,
       });
       
-      clearTimeout(timeoutId);
+      // clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();

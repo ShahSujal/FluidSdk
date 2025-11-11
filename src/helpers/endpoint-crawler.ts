@@ -85,59 +85,75 @@ export class EndpointCrawler {
    */
   private async _fetchViaJsonRpc(httpUrl: string): Promise<McpCapabilities | null> {
     try {
-      // Make all JSON-RPC calls in parallel for better performance
-      const [tools, resources, prompts] = await Promise.all([
-        this._jsonRpcCall(httpUrl, 'tools/list'),
-        this._jsonRpcCall(httpUrl, 'resources/list'),
-        this._jsonRpcCall(httpUrl, 'prompts/list'),
-      ]);
+      // Try different endpoint paths
+      const endpointPaths = ['', '/mcp', '/sse'];
+      
+      for (const path of endpointPaths) {
+        const url = `${httpUrl.replace(/\/$/, '')}${path}`;
+        
+        try {
+          // Make all JSON-RPC calls in parallel for better performance
+          const [tools, resources, prompts] = await Promise.all([
+            this._jsonRpcCall(url, 'tools/list'),
+            this._jsonRpcCall(url, 'resources/list'),
+            this._jsonRpcCall(url, 'prompts/list'),
+          ]);
 
-      const mcpTools: string[] = [];
-      const mcpResources: string[] = [];
-      const mcpPrompts: string[] = [];
+          const mcpTools: string[] = [];
+          const mcpResources: string[] = [];
+          const mcpPrompts: string[] = [];
 
-      // Extract names from tools
-      if (tools && typeof tools === 'object' && 'tools' in tools) {
-        const toolsArray = (tools as any).tools;
-        if (Array.isArray(toolsArray)) {
-          for (const tool of toolsArray) {
-            if (tool && typeof tool === 'object' && 'name' in tool) {
-              mcpTools.push(tool.name);
+          // Extract names from tools
+          if (tools && typeof tools === 'object' && 'tools' in tools) {
+            const toolsArray = (tools as any).tools;
+            if (Array.isArray(toolsArray)) {
+              for (const tool of toolsArray) {
+                if (tool && typeof tool === 'object' && 'name' in tool) {
+                  mcpTools.push(tool.name);
+                }
+              }
             }
           }
-        }
-      }
 
-      // Extract names from resources
-      if (resources && typeof resources === 'object' && 'resources' in resources) {
-        const resourcesArray = (resources as any).resources;
-        if (Array.isArray(resourcesArray)) {
-          for (const resource of resourcesArray) {
-            if (resource && typeof resource === 'object' && 'name' in resource) {
-              mcpResources.push(resource.name);
+          // Extract names from resources
+          if (resources && typeof resources === 'object' && 'resources' in resources) {
+            const resourcesArray = (resources as any).resources;
+            if (Array.isArray(resourcesArray)) {
+              for (const resource of resourcesArray) {
+                if (resource && typeof resource === 'object') {
+                  // Resources can have 'uri' or 'name'
+                  const name = resource.uri || resource.name;
+                  if (name) {
+                    mcpResources.push(name);
+                  }
+                }
+              }
             }
           }
-        }
-      }
 
-      // Extract names from prompts
-      if (prompts && typeof prompts === 'object' && 'prompts' in prompts) {
-        const promptsArray = (prompts as any).prompts;
-        if (Array.isArray(promptsArray)) {
-          for (const prompt of promptsArray) {
-            if (prompt && typeof prompt === 'object' && 'name' in prompt) {
-              mcpPrompts.push(prompt.name);
+          // Extract names from prompts
+          if (prompts && typeof prompts === 'object' && 'prompts' in prompts) {
+            const promptsArray = (prompts as any).prompts;
+            if (Array.isArray(promptsArray)) {
+              for (const prompt of promptsArray) {
+                if (prompt && typeof prompt === 'object' && 'name' in prompt) {
+                  mcpPrompts.push(prompt.name);
+                }
+              }
             }
           }
-        }
-      }
 
-      if (mcpTools.length || mcpResources.length || mcpPrompts.length) {
-        const result: McpCapabilities = {};
-        if (mcpTools.length > 0) result.mcpTools = mcpTools;
-        if (mcpResources.length > 0) result.mcpResources = mcpResources;
-        if (mcpPrompts.length > 0) result.mcpPrompts = mcpPrompts;
-        return result;
+          if (mcpTools.length || mcpResources.length || mcpPrompts.length) {
+            const result: McpCapabilities = {};
+            if (mcpTools.length > 0) result.mcpTools = mcpTools;
+            if (mcpResources.length > 0) result.mcpResources = mcpResources;
+            if (mcpPrompts.length > 0) result.mcpPrompts = mcpPrompts;
+            return result;
+          }
+        } catch (error) {
+          // Try next path
+          continue;
+        }
       }
     } catch (error) {
       // JSON-RPC approach failed - continue to fallback

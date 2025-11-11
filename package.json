@@ -11,17 +11,21 @@
     "dist"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "dev": "node --loader ts-node/esm"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
-    "fluidsdk": "file:fluidsdk-1.0.1.tgz",
+    "fluidsdk": "file:fluidsdk-1.2.0.tgz",
     "graphql-request": "^7.3.3",
     "ipfs-http-client": "^60.0.1"
   }

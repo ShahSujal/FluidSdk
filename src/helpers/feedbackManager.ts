@@ -374,6 +374,8 @@ export class FeedbackManager {
 
     const { tokenId } = parseAgentId(agentId);
 
+    
+
     try {
       const [score, tag1Bytes, tag2Bytes, isRevoked] = await this.web3Client.callContract(
         this.reputationRegistry,

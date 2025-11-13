@@ -1,5 +1,5 @@
 /**
- * Agent class for managing individual agents
+ * Agent class for managing individual agents (Singleton Pattern)
  */
 
 import { ethers } from 'ethers';
@@ -15,18 +15,46 @@ import { parseAgentId } from '../utils/id-format.js'
 import { TIMEOUTS } from '../utils/constants.js';
 
 /**
- * Agent class for managing individual agents
+ * Agent class for managing individual agents (Singleton Pattern)
  */
 export class Agent {
+  private static instance: Agent | null = null;
   private registrationFile: RegistrationFile;
   private _endpointCrawler: EndpointCrawler;
   private _dirtyMetadata = new Set<string>();
   private _lastRegisteredWallet: Address | undefined;
   private _lastRegisteredEns: string | undefined;
 
-  constructor(private sdk: FluidSDK, registrationFile: RegistrationFile) {
+  private constructor(private sdk: FluidSDK, registrationFile: RegistrationFile) {
     this.registrationFile = registrationFile;
     this._endpointCrawler = new EndpointCrawler(5000);
+  }
+
+  /**
+   * Get singleton instance
+   */
+  public static getInstance(sdk: FluidSDK, registrationFile: RegistrationFile): Agent {
+    if (!Agent.instance) {
+      Agent.instance = new Agent(sdk, registrationFile);
+    }
+    return Agent.instance;
+  }
+
+  /**
+   * Reset singleton instance
+   */
+  public static resetInstance(): void {
+    Agent.instance = null;
+  }
+
+  /**
+   * Update registration file for existing instance
+   */
+  public updateRegistrationFile(registrationFile: RegistrationFile): void {
+    this.registrationFile = registrationFile;
+    this._dirtyMetadata.clear();
+    this._lastRegisteredWallet = undefined;
+    this._lastRegisteredEns = undefined;
   }
 
   // Read-only properties
@@ -91,6 +119,7 @@ export class Agent {
 
   // Endpoint management
   async setMCP(endpoint: string, version: string = '2025-06-18', autoFetch: boolean = true): Promise<this> {
+ 
     // Remove existing MCP endpoint if any
     this.registrationFile.endpoints = this.registrationFile.endpoints.filter(
       (ep) => ep.type !== EndpointType.MCP
@@ -118,6 +147,7 @@ export class Agent {
       meta,
     };
     this.registrationFile.endpoints.push(mcpEndpoint);
+    this.registrationFile.metadata['mcpEndpoint'] = endpoint;
     this.registrationFile.updatedAt = Math.floor(Date.now() / 1000);
 
     return this;

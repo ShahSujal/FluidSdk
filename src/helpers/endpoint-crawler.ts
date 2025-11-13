@@ -4,13 +4,16 @@
  */
 
 export interface McpCapabilities {
-  mcpTools?: string[];
-  mcpPrompts?: string[];
-  mcpResources?: string[];
+  mcpTools?: any[];
+  mcpPrompts?: any[];
+  mcpResources?: any[];
+  mcpToolsDetails?: any;
+  mcpPromptsDetails?: any;
+  mcpResourcesDetails?: any;
 }
 
 export interface A2aCapabilities {
-  a2aSkills?: string[];
+  a2aSkills?: any[];
 }
 
 /**
@@ -83,78 +86,33 @@ export class EndpointCrawler {
   /**
    * Try to fetch capabilities via JSON-RPC
    */
-  private async _fetchViaJsonRpc(httpUrl: string): Promise<McpCapabilities | null> {
+  private async _fetchViaJsonRpc(httpUrl: string): Promise<any> {
     try {
-      // Try different endpoint paths
-      const endpointPaths = ['', '/mcp', '/sse'];
-      
-      for (const path of endpointPaths) {
-        const url = `${httpUrl.replace(/\/$/, '')}${path}`;
-        
-        try {
-          // Make all JSON-RPC calls in parallel for better performance
-          const [tools, resources, prompts] = await Promise.all([
-            this._jsonRpcCall(url, 'tools/list'),
-            this._jsonRpcCall(url, 'resources/list'),
-            this._jsonRpcCall(url, 'prompts/list'),
-          ]);
+          const tools = await fetch(`${httpUrl}/tools`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }).then(res => res.json());
 
-          const mcpTools: string[] = [];
-          const mcpResources: string[] = [];
-          const mcpPrompts: string[] = [];
-
-          // Extract names from tools
-          if (tools && typeof tools === 'object' && 'tools' in tools) {
-            const toolsArray = (tools as any).tools;
-            if (Array.isArray(toolsArray)) {
-              for (const tool of toolsArray) {
-                if (tool && typeof tool === 'object' && 'name' in tool) {
-                  mcpTools.push(tool.name);
-                }
-              }
-            }
-          }
-
-          // Extract names from resources
-          if (resources && typeof resources === 'object' && 'resources' in resources) {
-            const resourcesArray = (resources as any).resources;
-            if (Array.isArray(resourcesArray)) {
-              for (const resource of resourcesArray) {
-                if (resource && typeof resource === 'object') {
-                  // Resources can have 'uri' or 'name'
-                  const name = resource.uri || resource.name;
-                  if (name) {
-                    mcpResources.push(name);
-                  }
-                }
-              }
-            }
-          }
-
-          // Extract names from prompts
-          if (prompts && typeof prompts === 'object' && 'prompts' in prompts) {
-            const promptsArray = (prompts as any).prompts;
-            if (Array.isArray(promptsArray)) {
-              for (const prompt of promptsArray) {
-                if (prompt && typeof prompt === 'object' && 'name' in prompt) {
-                  mcpPrompts.push(prompt.name);
-                }
-              }
-            }
-          }
-
-          if (mcpTools.length || mcpResources.length || mcpPrompts.length) {
-            const result: McpCapabilities = {};
-            if (mcpTools.length > 0) result.mcpTools = mcpTools;
-            if (mcpResources.length > 0) result.mcpResources = mcpResources;
-            if (mcpPrompts.length > 0) result.mcpPrompts = mcpPrompts;
+          const resources = await fetch(`${httpUrl}/resources`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }).then(res => res.json()); 
+          const prompts = await fetch(`${httpUrl}/prompts`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }).then(res => res.json());
+            const result = {
+              mcpTools: tools,
+              mcpResources: resources,
+              mcpPrompts: prompts,
+            };
             return result;
-          }
-        } catch (error) {
-          // Try next path
-          continue;
-        }
-      }
     } catch (error) {
       // JSON-RPC approach failed - continue to fallback
     }
@@ -169,12 +127,11 @@ export class EndpointCrawler {
     try {
       const payload = createJsonRpcRequest(method, params);
       const response = await fetch(url, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
         },
-        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(this.timeout),
       });
 
@@ -196,9 +153,6 @@ export class EndpointCrawler {
 
       // Regular JSON response
       const result = JSON.parse(text);
-      if (result.result !== undefined) {
-        return result.result;
-      }
       return result;
     } catch (error) {
       // JSON-RPC call failed - continue to next method

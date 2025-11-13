@@ -228,7 +228,11 @@ export class FluidSDK {
   /**
    * Create a new agent (off-chain object in memory)
    */
-  createAgent(name: string, description: string, image?: URI): Agent {
+  createAgent({name, description, image, x402support, metadata, active, owners}: {name: string, description: string, image?: URI, x402support?: boolean, metadata: Record<string, any>, active?: boolean, owners:`0x${string}`[], trustModels?: string[]}): Agent {
+
+    console.log({name, description, image, x402support, metadata, active, owners});
+    
+
     const registrationFile: RegistrationFile = {
       name,
       description,
@@ -237,12 +241,13 @@ export class FluidSDK {
       trustModels: [],
       owners: [],
       operators: [],
-      active: false,
-      x402support: false,
-      metadata: {},
+      active: active || false,
+      x402support: x402support || false,
+      metadata: metadata,
       updatedAt: Math.floor(Date.now() / 1000),
     };
-    return new Agent(this, registrationFile);
+    
+    return Agent.getInstance(this, registrationFile);
   }
 
   /**
@@ -279,7 +284,7 @@ export class FluidSDK {
     registrationFile.agentId = agentId;
     registrationFile.agentURI = tokenUri || undefined;
 
-    return new Agent(this, registrationFile);
+    return Agent.getInstance(this, registrationFile);
   }
 
   /**

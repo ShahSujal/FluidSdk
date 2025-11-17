@@ -399,7 +399,7 @@ const main = async () => {
     }
 
     console.log("📝 Registering agent...");
-    const registrationFile = await agent.registerIPFS();
+    const registrationFile = await agent.registerIPFS(tools);
     console.log("✅ Agent registered on-chain!");
     console.log("   Agent ID:", registrationFile.agentId);
     console.log("   Agent URI:", registrationFile.agentURI);

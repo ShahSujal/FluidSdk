@@ -1,223 +1,63 @@
 /**
- * IPFS client for decentralized storage with support for multiple providers:
- * - Local IPFS nodes (via ipfs-http-client)
- * - Pinata IPFS pinning service
- * - Filecoin Pin service
+ * IPFS client for decentralized storage with Pinata SDK support
  */
 
-import type { IPFSHTTPClient } from 'ipfs-http-client';
+import { PinataSDK } from "pinata";
 import type { RegistrationFile } from '../types/interfaces.js';
 import { IPFS_GATEWAYS, TIMEOUTS } from '../utils/constants.js';
 
 export interface IPFSClientConfig {
-  url?: string; // IPFS node URL (e.g., "http://localhost:5001")
-  filecoinPinEnabled?: boolean;
-  filecoinPrivateKey?: string;
-  pinataEnabled?: boolean;
   pinataJwt?: string;
+  pinataGateway?: string;
 }
 
 /**
- * Client for IPFS operations supporting multiple providers
+ * Client for IPFS operations using Pinata SDK
  */
 export class IPFSClient {
-  private provider: 'pinata' | 'filecoinPin' | 'node';
+  private pinata: PinataSDK;
   private config: IPFSClientConfig;
-  private client?: IPFSHTTPClient;
 
   constructor(config: IPFSClientConfig) {
+    if (!config.pinataJwt) {
+      throw new Error('pinataJwt is required');
+    }
+    
     this.config = config;
-
-    // Determine provider
-    if (config.pinataEnabled) {
-      this.provider = 'pinata';
-      this._verifyPinataJwt();
-    } else if (config.filecoinPinEnabled) {
-      this.provider = 'filecoinPin';
-      // Note: Filecoin Pin in TypeScript requires external CLI or API
-      // We'll use HTTP API if available, otherwise throw error
-    } else if (config.url) {
-      this.provider = 'node';
-      // Lazy initialization - client will be created on first use
-    } else {
-      throw new Error('No IPFS provider configured. Specify url, pinataEnabled, or filecoinPinEnabled.');
-    }
+    this.pinata = new PinataSDK({
+      pinataJwt: config.pinataJwt,
+      pinataGateway: config.pinataGateway || "https://gateway.pinata.cloud"
+    });
   }
 
   /**
-   * Initialize IPFS HTTP client (lazy, only when needed)
+   * Add data to IPFS using Pinata SDK and return CID
    */
-  private async _ensureClient(): Promise<void> {
-    if (this.provider === 'node' && !this.client && this.config.url) {
-      const { create } = await import('ipfs-http-client');
-      this.client = create({ url: this.config.url });
-    }
-  }
-
-  private _verifyPinataJwt(): void {
-    if (!this.config.pinataJwt) {
-      throw new Error('pinataJwt is required when pinataEnabled=true');
-    }
-  }
-
-  /**
-   * Pin data to Pinata using v3 API
-   */
-  private async _pinToPinata(data: string): Promise<string> {
-    const url = 'https://uploads.pinata.cloud/v3/files';
-    const headers = {
-      Authorization: `Bearer ${this.config.pinataJwt}`,
-    };
-
-    // Create a Blob from the data
-    const blob = new Blob([data], { type: 'application/json' });
-    const formData = new FormData();
-    formData.append('file', blob, 'registration.json');
-    formData.append('network', 'public');
-
+  async add(data: string): Promise<string> {
     try {
-      // Add timeout to fetch
-      // const controller = new AbortController();
-      // const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.PINATA_UPLOAD);
+      const config = { pinataJwt: this.config.pinataJwt! };
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: formData,
-        // signal: controller.signal,
-      });
-      
-      // clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to pin to Pinata: HTTP ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json();
-
-      // Define proper response type
-      interface PinataResponse {
-        data?: {
-          cid?: string;
-        };
-        cid?: string;
-        IpfsHash?: string;
-      }
-
-      const pinataResult = result as PinataResponse;
-      // v3 API returns CID in data.cid
-      const cid = pinataResult?.data?.cid || pinataResult?.cid || pinataResult?.IpfsHash;
-      if (!cid) {
-        throw new Error(`No CID returned from Pinata. Response: ${JSON.stringify(result)}`);
-      }
-
-      // Verify CID is accessible on Pinata gateway (with short timeout since we just uploaded)
-      // This catches cases where Pinata returns a CID but the upload actually failed
-      // Note: We treat HTTP 429 (rate limit) and timeouts as non-fatal since content may propagate with delay
+      // Try to parse as JSON first
       try {
-        const verifyUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
-        const verifyResponse = await fetch(verifyUrl, {
-          signal: AbortSignal.timeout(5000), // 5 second timeout for verification
-        });
-        if (!verifyResponse.ok) {
-          // HTTP 429 (rate limit) is not a failure - gateway is just rate limiting
-          if (verifyResponse.status === 429) {
-            console.warn(
-              `[IPFS] Pinata returned CID ${cid} but gateway is rate-limited (HTTP 429). ` +
-              `Content is likely available but verification skipped due to rate limiting.`
-            );
-          } else {
-            // Other HTTP errors might indicate a real problem
-            throw new Error(
-              `Pinata returned CID ${cid} but content is not accessible on gateway (HTTP ${verifyResponse.status}). ` +
-              `This may indicate the upload failed. Full Pinata response: ${JSON.stringify(result)}`
-            );
-          }
-        }
-      } catch (verifyError) {
-        // If verification fails, check if it's a timeout or rate limit (non-fatal)
-        if (verifyError instanceof Error) {
-          // Timeout or network errors are non-fatal - content may propagate with delay
-          if (verifyError.message.includes('timeout') || verifyError.message.includes('aborted')) {
-            console.warn(
-              `[IPFS] Pinata returned CID ${cid} but verification timed out. ` +
-              `Content may propagate with delay. Full Pinata response: ${JSON.stringify(result)}`
-            );
-          } else if (verifyError.message.includes('429')) {
-            // Rate limit is non-fatal
-            console.warn(
-              `[IPFS] Pinata returned CID ${cid} but gateway is rate-limited. ` +
-              `Content is likely available but verification skipped.`
-            );
-          } else {
-            // Other errors might indicate a real problem, but we'll still continue
-            // since Pinata API returned success - content might just need time to propagate
-            console.warn(
-              `[IPFS] Pinata returned CID ${cid} but verification failed: ${verifyError.message}. ` +
-              `Content may propagate with delay. Full Pinata response: ${JSON.stringify(result)}`
-            );
-          }
-        }
+        const jsonData = JSON.parse(data);
+        const { uploadJson } = await import('pinata');
+        const result = await uploadJson(config, jsonData, "public");
+        return result.cid;
+      } catch {
+        // If JSON parsing fails, upload as file
+        const { uploadFile } = await import('pinata');
+        const file = new File([data], 'data.txt', { type: 'text/plain' });
+        const result = await uploadFile(config, file, "public");
+        return result.cid;
       }
-
-      return cid;
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Pinata upload timed out after ${TIMEOUTS.PINATA_UPLOAD / 1000} seconds`);
-      }
+    } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to pin to Pinata: ${errorMessage}`);
     }
   }
 
   /**
-   * Pin data to Filecoin Pin
-   * Note: This requires the Filecoin Pin API or CLI to be available
-   * For now, we'll throw an error directing users to use the CLI
-   */
-  private async _pinToFilecoin(data: string): Promise<string> {
-    // Filecoin Pin typically requires CLI or API access
-    // This is a placeholder - in production, you'd call the Filecoin Pin API
-    throw new Error(
-      'Filecoin Pin via TypeScript SDK not yet fully implemented. ' +
-        'Please use the filecoin-pin CLI or implement the Filecoin Pin API integration.'
-    );
-  }
-
-  /**
-   * Pin data to local IPFS node
-   */
-  private async _pinToLocalIpfs(data: string): Promise<string> {
-    await this._ensureClient();
-    if (!this.client) {
-      throw new Error('No IPFS client available');
-    }
-
-    const result = await this.client.add(data);
-    return result.cid.toString();
-  }
-
-  /**
-   * Add data to IPFS and return CID
-   */
-  async add(data: string): Promise<string> {
-    try {
-      if (this.provider === 'pinata') {
-        return await this._pinToPinata(data);
-      } else if (this.provider === 'filecoinPin') {
-        return await this._pinToFilecoin(data);
-      } else {
-        return await this._pinToLocalIpfs(data);
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
    * Add file to IPFS and return CID
-   * Note: This method works in Node.js environments. For browser, use add() with file content directly.
    */
   async addFile(filepath: string): Promise<string> {
     // Check if we're in Node.js environment
@@ -228,27 +68,24 @@ export class IPFSClient {
       );
     }
 
-    const fs = await import('fs');
-    const data = fs.readFileSync(filepath, 'utf-8');
-
-    if (this.provider === 'pinata') {
-      return this._pinToPinata(data);
-    } else if (this.provider === 'filecoinPin') {
-      return this._pinToFilecoin(filepath);
-    } else {
-      await this._ensureClient();
-      if (!this.client) {
-        throw new Error('No IPFS client available');
-      }
-      // For local IPFS, add file directly
+    try {
+      const fs = await import('fs');
+      const { uploadFile } = await import('pinata');
       const fileContent = fs.readFileSync(filepath);
-      const result = await this.client.add(fileContent);
-      return result.cid.toString();
+      const fileName = filepath.split(/[\/\\]/).pop() || 'file';
+      
+      const file = new File([fileContent], fileName);
+      const config = { pinataJwt: this.config.pinataJwt! };
+      const result = await uploadFile(config, file, "public");
+      return result.cid;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to upload file to Pinata: ${errorMessage}`);
     }
   }
 
   /**
-   * Get data from IPFS by CID
+   * Get data from IPFS by CID using gateways
    */
   async get(cid: string): Promise<string> {
     // Extract CID from IPFS URL if needed
@@ -256,56 +93,36 @@ export class IPFSClient {
       cid = cid.slice(7); // Remove "ipfs://" prefix
     }
 
-    // For Pinata and Filecoin Pin, use IPFS gateways
-    if (this.provider === 'pinata' || this.provider === 'filecoinPin') {
-      const gateways = IPFS_GATEWAYS.map(gateway => `${gateway}${cid}`);
+    // Use configured gateway or fallback to public gateways
+    const gateways = [
+      this.config.pinataGateway || 'https://gateway.pinata.cloud',
+      ...IPFS_GATEWAYS
+    ].map(gateway => `${gateway.replace(/\/$/, '')}/ipfs/${cid}`);
 
-      // Try all gateways in parallel - use the first successful response
-      const promises = gateways.map(async (gateway) => {
-        try {
-          const response = await fetch(gateway, {
-            signal: AbortSignal.timeout(TIMEOUTS.IPFS_GATEWAY),
-          });
-          if (response.ok) {
-            return await response.text();
-          }
-          throw new Error(`HTTP ${response.status}`);
-        } catch (error) {
-          throw error;
+    // Try all gateways in parallel - use the first successful response
+    const promises = gateways.map(async (gateway) => {
+      try {
+        const response = await fetch(gateway, {
+          signal: AbortSignal.timeout(TIMEOUTS.IPFS_GATEWAY),
+        });
+        if (response.ok) {
+          return await response.text();
         }
-      });
-
-      // Use Promise.allSettled to get the first successful result
-      const results = await Promise.allSettled(promises);
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          return result.value;
-        }
+        throw new Error(`HTTP ${response.status}`);
+      } catch (error) {
+        throw error;
       }
+    });
 
-      throw new Error('Failed to retrieve data from all IPFS gateways');
-    } else {
-      await this._ensureClient();
-      if (!this.client) {
-        throw new Error('No IPFS client available');
+    // Use Promise.allSettled to get the first successful result
+    const results = await Promise.allSettled(promises);
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        return result.value;
       }
-
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of this.client.cat(cid)) {
-        chunks.push(chunk);
-      }
-
-      // Concatenate chunks and convert to string
-      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-      const result = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      return new TextDecoder().decode(result);
     }
+
+    throw new Error('Failed to retrieve data from all IPFS gateways');
   }
 
   /**
@@ -317,36 +134,26 @@ export class IPFSClient {
   }
 
   /**
-   * Pin a CID to local node
+   * Pin a CID (already pinned with Pinata SDK uploads)
    */
   async pin(cid: string): Promise<{ pinned: string[] }> {
-    if (this.provider === 'filecoinPin') {
-      // Filecoin Pin automatically pins data, so this is a no-op
-      return { pinned: [cid] };
-    } else {
-      await this._ensureClient();
-      if (!this.client) {
-        throw new Error('No IPFS client available');
-      }
-      await this.client.pin.add(cid);
-      return { pinned: [cid] };
-    }
+    // Files uploaded via Pinata SDK are automatically pinned
+    // This method is included for compatibility
+    return { pinned: [cid] };
   }
 
   /**
-   * Unpin a CID from local node
+   * Unpin a CID from Pinata
    */
   async unpin(cid: string): Promise<{ unpinned: string[] }> {
-    if (this.provider === 'filecoinPin') {
-      // Filecoin Pin doesn't support unpinning in the same way
+    try {
+      const { deleteFile } = await import('pinata');
+      const config = { pinataJwt: this.config.pinataJwt! };
+      await deleteFile(config, [cid], "public");
       return { unpinned: [cid] };
-    } else {
-      await this._ensureClient();
-      if (!this.client) {
-        throw new Error('No IPFS client available');
-      }
-      await this.client.pin.rm(cid);
-      return { unpinned: [cid] };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to unpin from Pinata: ${errorMessage}`);
     }
   }
 
@@ -354,8 +161,15 @@ export class IPFSClient {
    * Add JSON data to IPFS and return CID
    */
   async addJson(data: Record<string, unknown>): Promise<string> {
-    const jsonStr = JSON.stringify(data, null, 2);
-    return this.add(jsonStr);
+    try {
+      const { uploadJson } = await import('pinata');
+      const config = { pinataJwt: this.config.pinataJwt! };
+      const result = await uploadJson(config, data, "public");
+      return result.cid;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to upload JSON to Pinata: ${errorMessage}`);
+    }
   }
 
   /**
@@ -364,7 +178,8 @@ export class IPFSClient {
   async addRegistrationFile(
     registrationFile: RegistrationFile,
     chainId?: number,
-    identityRegistryAddress?: string
+    identityRegistryAddress?: string,
+    tools: any = []
   ): Promise<string> {
     // Convert from internal format { type, value, meta } to ERC-8004 format { name, endpoint, version }
     const endpoints: Array<Record<string, unknown>> = [];
@@ -409,15 +224,11 @@ export class IPFSClient {
     
     // Build ERC-8004 compliant registration file
     const data = {
-      type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+      creatorAddress: registrationFile.walletAddress,
+      tools: tools,
+      type: "agent",
       name: registrationFile.name,
       description: registrationFile.description,
-      ...(registrationFile.image && { image: registrationFile.image }),
-      endpoints,
-      ...(registrations.length > 0 && { registrations }),
-      ...(registrationFile.trustModels.length > 0 && {
-        supportedTrusts: registrationFile.trustModels,
-      }),
       active: registrationFile.active,
       x402support: registrationFile.x402support,
     };
@@ -437,11 +248,8 @@ export class IPFSClient {
    * Close IPFS client connection
    */
   async close(): Promise<void> {
-    if (this.client) {
-      // IPFS HTTP client doesn't have a close method in the same way
-      // But we can clear the reference
-      this.client = undefined;
-    }
+    // Pinata SDK doesn't require explicit connection cleanup
+    // This method is included for compatibility
   }
 }
 

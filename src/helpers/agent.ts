@@ -146,6 +146,11 @@ export class Agent {
       value: endpoint,
       meta,
     };
+
+    console.log({
+      mcpEndpoint
+    });
+    
     this.registrationFile.endpoints.push(mcpEndpoint);
     this.registrationFile.metadata['mcpEndpoint'] = endpoint;
     this.registrationFile.updatedAt = Math.floor(Date.now() / 1000);
@@ -326,7 +331,7 @@ export class Agent {
   /**
    * Register agent on-chain with IPFS flow
    */
-  async registerIPFS(): Promise<RegistrationFile> {
+  async registerIPFS(tools: any = []): Promise<RegistrationFile> {
     // Validate basic info
     if (!this.registrationFile.name || !this.registrationFile.description) {
       throw new Error('Agent must have name and description before registration');
@@ -341,7 +346,8 @@ export class Agent {
       const ipfsCid = await this.sdk.ipfsClient!.addRegistrationFile(
         this.registrationFile,
         chainId,
-        identityRegistryAddress
+        identityRegistryAddress,
+        tools
       );
 
       // Update metadata on-chain if changed
@@ -391,7 +397,8 @@ export class Agent {
       const ipfsCid = await this.sdk.ipfsClient!.addRegistrationFile(
         this.registrationFile,
         chainId,
-        identityRegistryAddress
+        identityRegistryAddress,
+        tools
       );
 
       // Step 3: Set agent URI on-chain

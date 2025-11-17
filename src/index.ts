@@ -19,10 +19,9 @@ export interface SDKConfig {
   rpcUrl: string;
   signer?: string | ethers.Wallet | ethers.Signer;
   registryOverrides?: Record<number, Record<string, `0x${string}`>>;
-  ipfs?: 'node' | 'filecoinPin' | 'pinata';
-  ipfsNodeUrl?: string;
-  filecoinPrivateKey?: string;
+  ipfs?: 'pinata';  // Only Pinata is supported now
   pinataJwt?: string;
+  pinataGateway?: string;
   subgraphUrl?: string;
   subgraphOverrides?: Record<number, string>;
 }
@@ -105,25 +104,17 @@ export class FluidSDK {
 
     const ipfsConfig: IPFSClientConfig = {};
 
-    if (config.ipfs === 'node') {
-      if (!config.ipfsNodeUrl) {
-        throw new Error("ipfsNodeUrl is required when ipfs='node'");
-      }
-      ipfsConfig.url = config.ipfsNodeUrl;
-    } else if (config.ipfs === 'filecoinPin') {
-      if (!config.filecoinPrivateKey) {
-        throw new Error("filecoinPrivateKey is required when ipfs='filecoinPin'");
-      }
-      ipfsConfig.filecoinPinEnabled = true;
-      ipfsConfig.filecoinPrivateKey = config.filecoinPrivateKey;
-    } else if (config.ipfs === 'pinata') {
+    // Only Pinata is supported now
+    if (config.ipfs === 'pinata') {
       if (!config.pinataJwt) {
         throw new Error("pinataJwt is required when ipfs='pinata'");
       }
-      ipfsConfig.pinataEnabled = true;
       ipfsConfig.pinataJwt = config.pinataJwt;
+      if (config.pinataGateway) {
+        ipfsConfig.pinataGateway = config.pinataGateway;
+      }
     } else {
-      throw new Error(`Invalid ipfs value: ${config.ipfs}. Must be 'node', 'filecoinPin', or 'pinata'`);
+      throw new Error(`Invalid ipfs value: ${config.ipfs}. Only 'pinata' is supported now`);
     }
 
     return new IPFSClient(ipfsConfig);

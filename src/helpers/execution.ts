@@ -159,9 +159,12 @@ export class ExecuteTask {
   }) => {
 
        const defaultRegistries = DEFAULT_REGISTRIES[contractConfig.chainId] || {};
-    if (!defaultRegistries.identityRegistryAddress || !defaultRegistries.reputationRegistryAddress) {
+    if (!defaultRegistries.IDENTITY || !defaultRegistries.REPUTATION) {
       throw new Error(`No default registries found for chainId ${contractConfig.chainId}`);
     }
+
+    const identityRegistryAddress = defaultRegistries.IDENTITY;
+    const reputationRegistryAddress = defaultRegistries.REPUTATION;
     // Parse agent ID
     const agentIdParts = feedbackParams.agentId.split(':');
     if (agentIdParts.length !== 2 || !agentIdParts[0] || !agentIdParts[1]) {
@@ -191,7 +194,7 @@ export class ExecuteTask {
     ];
 
     const reputationRegistry = new ethers.Contract(
-      defaultRegistries.reputationRegistryAddress,
+      reputationRegistryAddress,
       reputationRegistryAbi,
       wallet
     );
@@ -214,7 +217,7 @@ export class ExecuteTask {
       feedbackParams.agentId,
       clientAddress,
       chainId,
-      defaultRegistries.identityRegistryAddress,
+      identityRegistryAddress,
       feedbackParams.score,
       feedbackParams.tags,
       feedbackParams.text,
@@ -226,6 +229,10 @@ export class ExecuteTask {
       feedbackParams.proofOfPayment,
       feedbackParams.extra
     );
+    console.log({
+        feedbackFile
+    });
+    
 
     // Sign feedback auth
     const feedbackAuth = await this.signFeedbackAuth(
@@ -233,9 +240,13 @@ export class ExecuteTask {
       clientAddress,
       feedbackIndex,
       chainId,
-      defaultRegistries.identityRegistryAddress,
+      identityRegistryAddress,
       wallet
     );
+
+    console.log({
+      feedbackAuth
+    });
 
     // Update feedback file with auth
     feedbackFile.feedbackAuth = feedbackAuth;
@@ -259,7 +270,10 @@ export class ExecuteTask {
         console.warn('Failed to upload to IPFS:', error);
       }
     }
-
+    console.log({
+        feedbackUri
+    });
+    
     // Submit to blockchain
     const giveFeedbackMethod = reputationRegistry.giveFeedback;
     if (!giveFeedbackMethod) {
@@ -276,6 +290,10 @@ export class ExecuteTask {
       ethers.getBytes(feedbackAuth)
     );
 
+    console.log({
+        tx
+    });
+    
     const receipt = await tx.wait();
 
     return {
@@ -417,4 +435,6 @@ export class ExecuteTask {
     const result = await uploadJson(config, data, "public");
     return result.cid;
   };
+
+  
 }

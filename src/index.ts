@@ -899,3 +899,21 @@ export { ExecuteTask } from './helpers/execution.js';
 export type { Signer } from 'x402-axios';
 export type { FeedbackParams, ContractConfig } from './helpers/execution.js';
 
+// Export function-tools functions and types
+export {
+  getAvailableTools,
+  fetchAgents,
+  fetchAgentById,
+  decodeHexValue,
+  getMetadataValue,
+  calculateAverageRating,
+  scoreToStars
+} from './helpers/function-tools.js';
+
+export type {
+  Tool,
+  IPFSMetadata,
+  AgentDataType,
+  AgentsResponse
+} from './helpers/function-tools.js';
+

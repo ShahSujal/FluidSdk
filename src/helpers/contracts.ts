@@ -364,5 +364,7 @@ export const DEFAULT_SUBGRAPH_URLS: Record<ChainId, string> = {
     'https://api.studio.thegraph.com/query/1715584/fluidsdk/version/latest', // Base Sepolia
   80002:
     'https://api.studio.thegraph.com/query/1715584/fluidsdk/version/latest', // Polygon Amoy
+  97:
+    'https://api.studio.thegraph.com/query/1715584/fluidsdk/version/latest', // BNB Chain Testnet
 };
 

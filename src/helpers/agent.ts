@@ -331,10 +331,20 @@ export class Agent {
   /**
    * Register agent on-chain with IPFS flow
    */
-  async registerIPFS(tools: any = []): Promise<RegistrationFile> {
+  async registerIPFS(): Promise<RegistrationFile> {
     // Validate basic info
     if (!this.registrationFile.name || !this.registrationFile.description) {
       throw new Error('Agent must have name and description before registration');
+    }
+    const tools = await fetch(`${this.registrationFile.agentURI}/tools`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }).then((res) => res.json());
+
+    if (!tools) {
+      throw new Error('Failed to fetch tools from agent URI');  
     }
 
     if (this.registrationFile.agentId) {
